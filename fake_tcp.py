@@ -3,12 +3,9 @@ import socket
 import sys
 import threading
 import time
-
 from pydivert import Packet
-
 from monitor_connection import MonitorConnection
 from injecter import TcpInjector
-
 
 class FakeInjectiveConnection(MonitorConnection):
     def __init__(self, sock: socket.socket, src_ip, dst_ip,
@@ -23,9 +20,7 @@ class FakeInjectiveConnection(MonitorConnection):
         self.peer_sock = peer_sock
         self.running_loop = asyncio.get_running_loop()
 
-
 class FakeTcpInjector(TcpInjector):
-
     def __init__(self, w_filter: str, connections: dict[tuple, FakeInjectiveConnection]):
         super().__init__(w_filter)
         self.connections = connections
@@ -41,21 +36,20 @@ class FakeTcpInjector(TcpInjector):
             packet.tcp.payload = connection.fake_data
             if packet.ipv4:
                 packet.ipv4.ident = (packet.ipv4.ident + 1) & 0xffff
-            # if connection.bypass_method == "wrong_checksum":
-            #     ...
+
             if connection.bypass_method == "wrong_seq":
                 packet.tcp.seq_num = (connection.syn_seq + 1 - len(packet.tcp.payload)) & 0xffffffff
                 connection.fake_sent = True
                 self.w.send(packet, True)
-
-
-
-
+            elif connection.bypass_method == "ttl_expire":
+                packet.tcp.seq_num = (connection.syn_seq + 1) & 0xffffffff
+                packet.ipv4.ttl = 8
+                connection.fake_sent = True
+                self.w.send(packet, True)
             else:
                 sys.exit("not implemented method!")
 
     def on_unexpected_packet(self, packet: Packet, connection: FakeInjectiveConnection, info_m: str):
-        print(info_m, packet)
         connection.sock.close()
         connection.peer_sock.close()
         connection.monitor = False
